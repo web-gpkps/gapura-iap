@@ -1,5 +1,4 @@
 import {
-  evidenceMimeType,
   matchesEvidenceFileSignature,
   validateEvidenceMetadata,
   type EvidenceKind,
@@ -12,7 +11,6 @@ const MAX_ATTEMPTS = 3;
 interface UploadSessionResponse {
   sessionUrl?: string;
   nonce?: string;
-  mimeType?: string;
   error?: string;
 }
 
@@ -43,15 +41,20 @@ export async function uploadEvidence({
     throw new Error("Isi file tidak sesuai dengan format evidence.");
   }
 
-  const sessionResponse = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      kind,
-      file: { name: file.name, type: file.type, size: file.size },
-      stepNos,
-    }),
-  });
+  let sessionResponse: Response;
+  try {
+    sessionResponse = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind,
+        file: { name: file.name, type: file.type, size: file.size },
+        stepNos,
+      }),
+    });
+  } catch {
+    throw new Error("Tidak dapat menghubungi server untuk memulai upload evidence.");
+  }
   const session = await readUploadResponse<UploadSessionResponse>(sessionResponse);
   if (!sessionResponse.ok || !session.sessionUrl || !session.nonce) {
     throw new Error(session.error || "Gagal memulai upload evidence.");
@@ -60,20 +63,26 @@ export async function uploadEvidence({
   const fileId = await uploadFileToDrive(
     session.sessionUrl,
     file,
-    session.mimeType || evidenceMimeType(file),
     onProgress,
   );
-  const completeResponse = await fetch(endpoint, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      fileId,
-      nonce: session.nonce,
-      kind,
-      originalName: file.name,
-      stepNos,
-    }),
-  });
+  let completeResponse: Response;
+  try {
+    completeResponse = await fetch(endpoint, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileId,
+        nonce: session.nonce,
+        kind,
+        originalName: file.name,
+        stepNos,
+      }),
+    });
+  } catch {
+    throw new Error(
+      "File sudah terkirim ke Google Drive, tetapi server tidak dapat menyimpan link-nya. Coba lagi setelah koneksi stabil.",
+    );
+  }
   const completed = await readUploadResponse<CompletedUploadResponse>(completeResponse);
   if (!completeResponse.ok || !completed.url) {
     throw new Error(completed.error || "Gagal menyimpan link evidence.");
@@ -85,7 +94,6 @@ export async function uploadEvidence({
 async function uploadFileToDrive(
   sessionUrl: string,
   file: File,
-  mimeType: string,
   onProgress?: (percent: number) => void,
 ): Promise<string> {
   let offset = 0;
@@ -94,7 +102,6 @@ async function uploadFileToDrive(
     const response = await putChunkWithRetry(
       sessionUrl,
       file.slice(offset, endExclusive),
-      mimeType,
       offset,
       endExclusive - 1,
       file.size,
@@ -118,7 +125,6 @@ async function uploadFileToDrive(
 async function putChunkWithRetry(
   sessionUrl: string,
   chunk: Blob,
-  mimeType: string,
   start: number,
   end: number,
   total: number,
@@ -129,7 +135,6 @@ async function putChunkWithRetry(
       const response = await fetch(sessionUrl, {
         method: "PUT",
         headers: {
-          "Content-Type": mimeType,
           "Content-Range": `bytes ${start}-${end}/${total}`,
         },
         body: chunk,
@@ -141,7 +146,10 @@ async function putChunkWithRetry(
     }
     await delay(400 * attempt);
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw new Error(
+    "Browser tidak dapat mengirim file ke Google Drive. Muat ulang halaman lalu coba lagi.",
+    { cause: lastError },
+  );
 }
 
 function acceptedOffset(range: string | null): number | null {

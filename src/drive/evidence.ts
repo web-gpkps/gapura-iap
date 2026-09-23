@@ -108,6 +108,7 @@ export async function startEvidenceUploadSession(
   key: ItemKey,
   identity: EvidenceFileIdentity,
   stepNos: readonly number[],
+  browserOrigin: string,
 ): Promise<EvidenceUploadSession> {
   const validationError = validateEvidenceFile(file, kind);
   if (validationError) throw new Error(validationError);
@@ -118,6 +119,7 @@ export async function startEvidenceUploadSession(
   const mimeType = evidenceMimeType(file);
   const nonce = randomBytes(24).toString("base64url");
   const target = targetFingerprint(key, stepNos);
+  const uploadOrigin = new URL(browserOrigin).origin;
   const url = new URL("https://www.googleapis.com/upload/drive/v3/files");
   url.searchParams.set("uploadType", "resumable");
   url.searchParams.set("supportsAllDrives", "true");
@@ -129,6 +131,10 @@ export async function startEvidenceUploadSession(
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
+        // Drive uses the initiating origin when allowing the browser's later PUT
+        // to this resumable session. Without it, the upload succeeds in server
+        // tools but the browser sees only a CORS-level "Failed to fetch".
+        Origin: uploadOrigin,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": mimeType,
         "X-Upload-Content-Length": String(file.size),

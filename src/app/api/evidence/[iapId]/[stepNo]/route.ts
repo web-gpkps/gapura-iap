@@ -53,6 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
         date: primaryItem.targetDate || todayInJakarta(),
       },
       target.stepNos,
+      request.headers.get("origin")!,
     );
     return Response.json(session);
   } catch (error) {
