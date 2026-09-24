@@ -49,6 +49,8 @@ const UPLOAD_TARGET_PROPERTY = "iapUploadTarget";
 const UPLOAD_PENDING_PROPERTY = "iapUploadPending";
 const SAMPLE_BYTES = 1024 * 1024;
 
+let cachedAuth: { key: string; client: InstanceType<typeof auth.OAuth2> } | undefined;
+
 /** My Drive uploads run as the folder owner so files use that account's quota. */
 function evidenceAuth() {
   const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID?.trim();
@@ -67,9 +69,15 @@ function evidenceAuth() {
     );
   }
 
-  const client = new auth.OAuth2(clientId, clientSecret);
-  client.setCredentials({ refresh_token: refreshToken });
-  return client;
+  // Reused across requests on a warm instance so the access token (valid ~1h) is
+  // refreshed once, not on every upload call. The library dedupes concurrent refreshes.
+  const cacheKey = `${clientId}\0${clientSecret}\0${refreshToken}`;
+  if (cachedAuth?.key !== cacheKey) {
+    const client = new auth.OAuth2(clientId, clientSecret);
+    client.setCredentials({ refresh_token: refreshToken });
+    cachedAuth = { key: cacheKey, client };
+  }
+  return cachedAuth.client;
 }
 
 export function validateEvidenceFile(
@@ -237,10 +245,19 @@ export async function completeEvidenceUpload(
     fields: "id",
   }, driveTimeout);
 
-  const winner = await settleDuplicates(drive, fingerprint, fileId);
+  // Independent Drive calls run together. Sharing a file the duplicate check then
+  // deletes is harmless, so its failure is reported only when this file is kept.
+  const [winner, shareError] = await Promise.all([
+    settleDuplicates(drive, fingerprint, fileId),
+    shareByLink(drive, fileId),
+  ]);
   if (winner && winner.fileId !== fileId) return { ...winner, reused: true };
-
-  await shareByLink(drive, fileId);
+  if (shareError) {
+    console.error(
+      `Evidence file ${fileId} tidak bisa dibagikan lewat link. Link di kolom Q hanya bisa dibuka oleh pemilik file.`,
+      shareError,
+    );
+  }
   return {
     fileId,
     webViewLink: viewOnlyLink(
@@ -330,18 +347,16 @@ async function settleDuplicates(
   }
 }
 
-async function shareByLink(drive: drive_v3.Drive, fileId: string): Promise<void> {
+async function shareByLink(drive: drive_v3.Drive, fileId: string): Promise<unknown> {
   try {
     await drive.permissions.create({
       fileId,
       supportsAllDrives: true,
       requestBody: { role: "reader", type: "anyone" },
     });
+    return null;
   } catch (error) {
-    console.error(
-      `Evidence file ${fileId} tidak bisa dibagikan lewat link. Link di kolom Q hanya bisa dibuka oleh pemilik file.`,
-      error,
-    );
+    return error;
   }
 }
 
