@@ -20,7 +20,13 @@
     "migrate:preview": "node node_modules/tsx/dist/cli.mjs scripts/sync-supabase.ts --preview",
     "sync:bundle": "node scripts/build-mirror-function.cjs",
     "verify:supabase": "node node_modules/tsx/dist/cli.mjs scripts/verify-supabase.ts",
-    "verify:app": "node node_modules/tsx/dist/cli.mjs scripts/verify-supabase-app.ts"
+    "verify:app": "node node_modules/tsx/dist/cli.mjs scripts/verify-supabase-app.ts",
+    "loadtest:plan": "node node_modules/tsx/dist/cli.mjs scripts/loadtest/manage.mjs plan",
+    "loadtest:check": "node scripts/loadtest/self-check.mjs",
+    "loadtest:seed": "node --env-file=.env.local node_modules/tsx/dist/cli.mjs scripts/loadtest/manage.mjs seed",
+    "loadtest:run": "node --env-file=.env.local node_modules/tsx/dist/cli.mjs scripts/loadtest/manage.mjs run",
+    "loadtest:cleanup": "node --env-file=.env.local node_modules/tsx/dist/cli.mjs scripts/loadtest/manage.mjs cleanup",
+    "loadtest:verify": "node --env-file=.env.local node_modules/tsx/dist/cli.mjs scripts/loadtest/manage.mjs verify"
   },
   "dependencies": {
     "@googleapis/drive": "25.0.0",
