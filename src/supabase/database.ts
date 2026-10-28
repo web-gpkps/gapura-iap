@@ -22,6 +22,10 @@ export class SupabaseDatabase {
     return (text ? JSON.parse(text) : undefined) as T;
   }
   snapshot(): Promise<DbRow[]> { return this.rpc("iap_snapshot"); }
+  /** The rows and the tracker rev they were read at; only the rev while it is still `since`. */
+  snapshotSince(since: number | null = null): Promise<{ rev: number; rows?: DbRow[] }> {
+    return this.rpc("iap_snapshot_since", { p_rev: since });
+  }
 }
 export function databaseKind(): "memory" | "supabase" {
   const kind = process.env.DATA_BACKEND;

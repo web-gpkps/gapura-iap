@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { database, databaseKind } from "@/supabase/database";
+import { database, databaseKind, type DbRow } from "@/supabase/database";
 import { rowToItem, safeLink, safeLinks } from "@/domain/rows";
 import { viewOnlyLink } from "@/domain/evidence";
 import { todayInJakarta } from "@/domain/dates";
@@ -12,7 +12,22 @@ import * as offline from "./sheet-tracker-repository";
 import { readContexts as offlineContexts } from "./sheet-case-context";
 
 export type MutationResult = { ok: true } | { ok: false; errors: FieldErrors };
-export const readDatabaseRows = cache(() => database().snapshot());
+
+/**
+ * The last snapshot this server instance read. A render asks Supabase only whether
+ * the tracker moved past that rev, so a refresh with nothing new costs a few bytes
+ * of egress instead of the whole table. Branch filtering still runs per request on
+ * whatever this returns, and consumers only read the shared rows.
+ */
+let latest: { rev: number; rows: DbRow[] } | undefined;
+export const readDatabaseRows = cache(async (): Promise<DbRow[]> => {
+  const known = latest;
+  const { rev, rows } = await database().snapshotSince(known?.rev ?? null);
+  if (!rows) return known!.rows;
+  // A slower request must not replace a newer snapshot; the rev only ever rises.
+  if (!latest || rev >= latest.rev) latest = { rev, rows };
+  return rows;
+});
 export const readItems = cache(async () => databaseKind() === "memory"
   ? offline.readItems() : (await readDatabaseRows()).map(r => rowToItem(r.cells)));
 

@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
   const text=await request.text();
   if(new TextEncoder().encode(text).length>1_000_000)return new Response("Payload too large",{status:413});
   const {name,payload}=JSON.parse(text);
-  if(!["iap_snapshot","iap_mutate"].includes(name))return new Response("Forbidden RPC",{status:403});
+  if(!["iap_snapshot","iap_snapshot_since","iap_mutate"].includes(name))return new Response("Forbidden RPC",{status:403});
   if(!payload||typeof payload!=="object"||Array.isArray(payload))return new Response("Invalid payload",{status:400});
   const response=await fetch(url+name,{method:"POST",headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(20_000)});
   // Forward DB errors without headers or service credentials.

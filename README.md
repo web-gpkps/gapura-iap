@@ -113,16 +113,30 @@ Latensi ujung ke ujung sekitar 3–6 detik. `useLiveRefresh` menyimpan interval
 cadangan 2 menit untuk websocket yang diblokir proxy, dan menahan refresh selama
 dialog terbuka agar isian tidak hilang.
 
-Setelah webhook aktif, longgarkan cron dari tiap menit menjadi jaring pengaman:
+Cron berjalan tiap 5 menit sebagai jaring pengaman; migration
+`20261028120000_cut_sync_egress` mengubah jadwal job yang sudah ada. Edit dari
+aplikasi sampai ke Sheets paling lambat 5 menit.
 
-```sql
-select cron.unschedule('iap-google-mirror');
--- jadwalkan ulang dengan '*/5 * * * *' memakai body yang sama
-```
+### Egress
+
+Project pernah dibatasi Supabase karena egress: tiap menit worker mengunduh
+seluruh tracker tiga kali (baseline bersama lease, snapshot sebelum dan sesudah
+rekonsiliasi), sekitar 1,35 MB per siklus walau data tidak berubah.
+
+Kini setiap write ke `iap_tracker` menaikkan `iap_tracker_rev` dalam transaksi
+yang sama. `iap_sync_state` menyimpan fingerprint SHA-256 baseline dan rev saat
+sync terakhir. Siklus tanpa perubahan hanya membandingkan fingerprint Sheets dan
+rev, lalu selesai tanpa mengunduh apa pun. Baseline hanya diunduh bila Sheets dan
+Supabase sama-sama berubah; snapshot kedua hanya diambil bila apply menulis baris.
+
+Dashboard memakai `iap_snapshot_since(rev)`: server Next.js menyimpan snapshot
+terakhir per instance dan hanya mengunduh ulang bila rev naik. Filter cabang tetap
+berjalan per request.
 
 ### Quota
 
-Siklus memakai tiga read Sheets; write menambah satu metadata read dan satu batch.
+Siklus tanpa perubahan memakai satu read Sheets; siklus dengan perubahan memakai tiga.
+Write menambah satu metadata read dan satu batch.
 Request dijarakkan minimal 1,5 detik per jenis quota. 429/5xx memakai exponential
 backoff, jitter, Retry-After, maksimal empat attempt. Permission/validation error
 tidak diulang cepat. Job gagal memakai backoff persisten 1–60 menit; lease worker
@@ -149,10 +163,12 @@ remote, termasuk empat migration auth yang sudah ada sebelumnya. Isi Vault:
 - `iap_server_token`: token yang sama dengan SUPABASE_IAP_SERVER_TOKEN.
 
 Deploy iap-data dan iap-google-mirror dengan JWT verification nonaktif;
-keduanya tetap memverifikasi token server. Setelah import berhasil, aktifkan cron:
+keduanya tetap memverifikasi token server. Urutan deploy: migration, lalu kedua
+function, lalu Next.js — gateway harus sudah mengizinkan `iap_snapshot_since`
+sebelum aplikasi memanggilnya. Setelah import berhasil, aktifkan cron:
 
 ```sql
-select cron.schedule('iap-google-mirror', '* * * * *', $job$
+select cron.schedule('iap-google-mirror', '*/5 * * * *', $job$
  select net.http_post(
   url := 'https://YOUR_PROJECT.supabase.co/functions/v1/iap-google-mirror',
   headers := jsonb_build_object('Content-Type','application/json',

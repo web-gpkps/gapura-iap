@@ -1,11 +1,16 @@
 begin;
 do $test$
-declare result jsonb; before_version bigint; token uuid:=gen_random_uuid(); failed boolean:=false;
+declare result jsonb; before_version bigint; before_rev bigint; before_baseline jsonb;
+ token uuid:=gen_random_uuid(); failed boolean:=false;
 begin
  if has_table_privilege('anon','public.iap_tracker','SELECT') or
  has_function_privilege('anon','public.iap_mutate(text,jsonb,date)','EXECUTE') or
- has_function_privilege('authenticated','public.iap_sync_config(text)','EXECUTE')
+ has_function_privilege('authenticated','public.iap_sync_config(text)','EXECUTE') or
+ has_function_privilege('authenticated','public.iap_snapshot_since(bigint)','EXECUTE') or
+ has_function_privilege('authenticated','public.iap_sync_baseline(uuid)','EXECUTE') or
+ has_table_privilege('authenticated','public.iap_tracker_rev','SELECT')
  then raise exception 'Server-only access grants failed'; end if;
+ select rev into before_rev from public.iap_tracker_rev where id;
  result:=public.iap_mutate('create_case',
  '{"iapId":"__IAP_TRANSACTION_TEST__","title":"Test","station":"CGK","steps":[
  {"step":"Test","action":"Test","pic":"A","timeline":"","targetDate":"9 Sep 2026",
@@ -15,6 +20,12 @@ begin
  if not exists(select 1 from public.iap_tracker where iap_id='__IAP_TRANSACTION_TEST__'
  and incident='Test incident' and kpis='KPI' and stored_overdue='TERLAMBAT')
  then raise exception 'Atomic create/context/overdue failed'; end if;
+ if (select rev from public.iap_tracker_rev where id) <= before_rev
+ then raise exception 'Tracker write did not raise the rev'; end if;
+ if public.iap_snapshot_since((select rev from public.iap_tracker_rev where id)) ? 'rows' or
+ not public.iap_snapshot_since(before_rev) ? 'rows' or
+ jsonb_array_length(public.iap_snapshot_since(null)->'rows') <> jsonb_array_length(public.iap_snapshot())
+ then raise exception 'Snapshot since rev failed'; end if;
  select version into before_version from public.iap_tracker where iap_id='__IAP_TRANSACTION_TEST__';
  perform public.iap_mutate('update_step',
  '{"iapId":"__IAP_TRANSACTION_TEST__","stepNo":1,"input":{
@@ -59,6 +70,15 @@ begin
  perform public.iap_sync_finish(token,'[]','test quota backoff',120);
  if not exists(select 1 from public.iap_sync_state where next_run_at>=now()+interval '120 seconds')
  then raise exception 'Persistent Retry-After failed'; end if;
+ select baseline into before_baseline from public.iap_sync_state where id;
+ update public.iap_sync_state set next_run_at=now(),failures=0 where id;
+ result:=public.iap_sync_acquire(token);
+ if result ? 'baseline' or not result ? 'rev' or public.iap_sync_baseline(token) is distinct from before_baseline
+ then raise exception 'Acquire must leave the baseline behind'; end if;
+ perform public.iap_sync_finish(token);
+ if (select baseline from public.iap_sync_state where id) is distinct from before_baseline or
+ not exists(select 1 from public.iap_sync_state where failures=0 and last_error is null)
+ then raise exception 'Idle finish must keep the baseline'; end if;
 end $test$;
-select 'CRUD, Jakarta overdue, context, version, atomic rollback, CAS, and grants passed' as verification;
+select 'CRUD, Jakarta overdue, context, version, rev, atomic rollback, CAS, idle sync, and grants passed' as verification;
 rollback;
