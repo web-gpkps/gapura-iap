@@ -30,11 +30,32 @@ export interface GoogleCredentials {
   privateKey: string;
 }
 
+/**
+ * A PEM carried in an environment variable arrives in several shapes: newlines
+ * escaped as `\n`, wrapped in the quotes a `.env` file needs, or already literal.
+ * Whatever is left over makes OpenSSL reject the key with `ERR_OSSL_UNSUPPORTED`,
+ * which says nothing about which of those it was — so each is handled here, and
+ * anything still not a PEM is named rather than passed on to be refused.
+ */
+export function privateKeyFromEnv(raw: string): string {
+  let key = raw.trim();
+  const quote = key[0];
+  if ((quote === '"' || quote === "'") && key.endsWith(quote)) key = key.slice(1, -1);
+  key = key.replace(/\\n/g, "\n").trim();
+  if (!/^-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(key)) {
+    throw new Error(
+      "GOOGLE_PRIVATE_KEY bukan PEM yang valid. Salin ulang nilai private_key dari file JSON service account.",
+    );
+  }
+  // google-auth-library hands the PEM to OpenSSL as-is, which wants the final newline.
+  return `${key}\n`;
+}
+
 export function googleCredentials(): GoogleCredentials {
   return {
     spreadsheetId: requireEnv("GOOGLE_SHEETS_SPREADSHEET_ID"),
     clientEmail: requireEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
-    privateKey: requireEnv("GOOGLE_PRIVATE_KEY"),
+    privateKey: privateKeyFromEnv(requireEnv("GOOGLE_PRIVATE_KEY")),
   };
 }
 

@@ -29,8 +29,8 @@ export class GoogleSheetsTransport implements SheetsTransport {
     const credentials = new auth.GoogleAuth({
       credentials: {
         client_email: config.clientEmail,
-        // Env vars carry the newlines escaped.
-        private_key: config.privateKey.replace(/\\n/g, "\n"),
+        // Already unescaped by `privateKeyFromEnv`.
+        private_key: config.privateKey,
       },
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
