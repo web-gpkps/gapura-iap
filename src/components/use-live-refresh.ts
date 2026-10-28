@@ -51,9 +51,13 @@ export function useLiveRefresh(paused: boolean) {
     };
 
     // DATA_BACKEND=memory runs without Supabase at all; there is nothing to
-    // subscribe to and constructing the client would throw.
+    // subscribe to and constructing the client would throw. Open access keeps the
+    // Supabase keys around but the project is the thing that is unreachable, so
+    // the socket would only retry against it — poll instead.
     const live = Boolean(
-      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+        process.env.NEXT_PUBLIC_IAP_OPEN_ACCESS !== "1",
     );
     // Loaded after hydration: supabase-js is the largest dependency on the page and
     // only this socket needs it, so it no longer delays the first paint.

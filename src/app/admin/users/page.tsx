@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { UserAdmin, type AdminUser } from "@/components/UserAdmin";
 import { requireAdmin } from "@/lib/auth";
-import { isOfflineAuth } from "@/lib/offline";
+import { isOfflineAuth, isOpenAccess } from "@/lib/offline";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export default async function AdminUsersPage() {
   const admin = await requireAdmin();
   // Offline fixture mode has no Supabase project behind it, so there are no accounts
   // to manage. Saying so beats a permission error from a query that cannot succeed.
-  const offline = isOfflineAuth();
+  const offline = isOfflineAuth() || isOpenAccess();
   const supabase = offline ? null : await supabaseServer();
 
   // Row level security already limits this to admins; `requireAdmin` above is what
@@ -71,8 +71,8 @@ export default async function AdminUsersPage() {
 
       {offline ? (
         <p className="card px-4 py-4 text-[13px] text-muted">
-          Mode data offline: tidak ada proyek Supabase yang terhubung, sehingga tidak
-          ada akun untuk dikelola.
+          Tidak ada proyek Supabase yang terhubung saat ini, sehingga tidak ada akun
+          untuk dikelola.
         </p>
       ) : error ? (
         <p role="alert" className="card px-4 py-4 text-[13px] text-late-ink">

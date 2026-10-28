@@ -2,6 +2,7 @@ import Link from "next/link";
 import { signOutAction } from "@/app/auth/actions";
 import { branchLabel, PUSAT } from "@/domain/branches";
 import type { Profile } from "@/lib/auth";
+import { isOpenAccess } from "@/lib/offline";
 import { Logo } from "./Logo";
 
 /**
@@ -15,6 +16,9 @@ import { Logo } from "./Logo";
 export function AppHeader({ profile }: { profile: Profile }) {
   const isPusat = profile.branchCode === PUSAT;
   const isAdmin = profile.role === "admin";
+  // Nothing to sign out of, and no accounts to manage, while the account layer is
+  // the part that is down. Saying so beats two buttons that only produce errors.
+  const open = isOpenAccess();
 
   return (
     <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-sm">
@@ -47,22 +51,30 @@ export function AppHeader({ profile }: { profile: Profile }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {isAdmin ? (
-            <Link href="/admin/users" className="btn">
-              Manajemen Pengguna
-            </Link>
-          ) : null}
-          <form action={signOutAction}>
-            {/* Outlined rather than solid: it reads unmistakably as the red exit,
-                without outweighing the work the page is actually for. */}
-            <button
-              type="submit"
-              className="btn border-late/40 text-late-ink hover:!bg-late hover:border-late hover:text-white"
-              data-testid="sign-out"
-            >
-              Keluar
-            </button>
-          </form>
+          {open ? (
+            <span className="pill bg-late/10 text-late-ink" data-testid="open-access">
+              Akses terbuka · tanpa login
+            </span>
+          ) : (
+            <>
+              {isAdmin ? (
+                <Link href="/admin/users" className="btn">
+                  Manajemen Pengguna
+                </Link>
+              ) : null}
+              <form action={signOutAction}>
+                {/* Outlined rather than solid: it reads unmistakably as the red exit,
+                    without outweighing the work the page is actually for. */}
+                <button
+                  type="submit"
+                  className="btn border-late/40 text-late-ink hover:!bg-late hover:border-late hover:text-white"
+                  data-testid="sign-out"
+                >
+                  Keluar
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>

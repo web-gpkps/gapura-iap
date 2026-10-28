@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { isOfflineAuth } from "@/lib/offline";
+import { isOfflineAuth, isOpenAccess } from "@/lib/offline";
 import { supabaseServer } from "@/lib/supabase/server";
 import { PUSAT, isBranchCode } from "@/domain/branches";
 
@@ -20,6 +20,16 @@ const OFFLINE_PROFILE: Profile = {
   id: "offline",
   email: "offline@local",
   fullName: "Mode Offline",
+  branchCode: PUSAT,
+  role: "admin",
+  status: "active",
+};
+
+/** The same stand-in for break-glass open access, named for what people will see. */
+const OPEN_ACCESS_PROFILE: Profile = {
+  id: "open-access",
+  email: "",
+  fullName: "Akses Terbuka",
   branchCode: PUSAT,
   role: "admin",
   status: "active",
@@ -45,6 +55,9 @@ export const currentProfile = cache(() => loadProfile("claims"));
 export const verifiedProfile = cache(() => loadProfile("server"));
 
 async function loadProfile(verify: "claims" | "server"): Promise<Profile | null> {
+  // Neither form of verification can reach a project that is not answering, so
+  // open access has to short-circuit both.
+  if (isOpenAccess()) return OPEN_ACCESS_PROFILE;
   if (isOfflineAuth()) return OFFLINE_PROFILE;
 
   const supabase = await supabaseServer();

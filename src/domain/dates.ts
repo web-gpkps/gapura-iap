@@ -1,4 +1,4 @@
-import { isOfflineAuth } from "@/lib/offline";
+import { isLocalFixtureMode } from "@/lib/offline";
 /**
  * The tracker stores dates as Indonesian text (`14 Okt 2026`), not as date values.
  * Internally we work in ISO `YYYY-MM-DD` — which sorts chronologically as a string —
@@ -145,7 +145,7 @@ function pinnedNow(): Date | null {
   const raw = process.env.IAP_NOW?.trim();
   // Development and the test servers state SHEETS_TRANSPORT explicitly; the
   // production deployment leaves it unset, so a stray IAP_NOW there does nothing.
-  if (!raw || !isOfflineAuth()) return null;
+  if (!raw || !isLocalFixtureMode()) return null;
   const instant = new Date(raw);
   return Number.isNaN(instant.getTime()) ? null : instant;
 }

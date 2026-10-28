@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isOfflineAuth } from "@/lib/offline";
+import { isLocalFixtureMode, isOfflineAuth, isOpenAccess } from "@/lib/offline";
 import { contentSecurityPolicy } from "@/lib/security";
 
 const PUBLIC_PATHS = new Set([
@@ -21,8 +21,16 @@ export async function middleware(request: NextRequest) {
   };
   let response = NextResponse.next({ request: { headers: requestHeaders } });
   const path = request.nextUrl.pathname;
-  if (path.startsWith("/api/test/") && !isOfflineAuth()) {
+  // Open access is a production mode, so it must not unlock the fixture endpoints.
+  if (path.startsWith("/api/test/") && !isLocalFixtureMode()) {
     return secure(new NextResponse("Not found", { status: 404 }));
+  }
+  if (isOpenAccess()) {
+    // Supabase is what the account screens talk to, and it is the thing that is
+    // unavailable; sending people to a login form that cannot answer is worse
+    // than putting them on the dashboard they came for.
+    if (!PUBLIC_PATHS.has(path)) return secure(response);
+    return secure(NextResponse.redirect(new URL("/", request.url)));
   }
   if (isOfflineAuth()) return secure(response);
 
